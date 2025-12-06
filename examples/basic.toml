@@ -34,6 +34,7 @@ remote_addr = "*"
 local_port = "80"
 remote_port = "*"
 action = "accept"
+filters = ["malicious-pattern"]
 
 [[rule]]
 name = "allow-https"
@@ -44,6 +45,7 @@ remote_addr = "*"
 local_port = "443"
 remote_port = "*"
 action = "accept"
+filters = ["malicious-pattern"]
 
 [[rule]]
 name = "block-all-external"

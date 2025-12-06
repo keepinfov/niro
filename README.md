@@ -30,7 +30,7 @@ default_policy = "accept"
 
 [[set]]
 name = "default"
-rules = ["allow-http", "block-suspicious"]
+rules = ["allow-http", "allow-https"]
 
 [[rule]]
 name = "allow-http"
@@ -38,11 +38,14 @@ direction = "in"
 protocol = "tcp"
 local_port = "80"
 action = "accept"
+filters = ["malicious-check"]
 
 [[rule]]
-name = "block-suspicious"
+name = "allow-https"
 direction = "in"
-action = "continue"
+protocol = "tcp"
+local_port = "443"
+action = "accept"
 filters = ["malicious-check"]
 
 [[filter]]
