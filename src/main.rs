@@ -97,7 +97,7 @@ enum Commands {
         verbose: bool,
     },
 
-    /// Run packet evaluation (simulation mode)
+    /// Run packet interception and filtering (requires root on Linux)
     Run {
         /// Configuration file(s)
         #[arg(short, long, required = true)]
@@ -111,7 +111,15 @@ enum Commands {
         #[arg(long, default_value = "accept")]
         default_policy: String,
 
-        /// Dry run - don't actually process, just show what would happen
+        /// NFQUEUE number to bind to (Linux only)
+        #[arg(short, long, default_value = "0")]
+        queue_num: u16,
+
+        /// Verbose output - show each packet decision
+        #[arg(short, long)]
+        verbose: bool,
+
+        /// Dry run - validate config and show what would happen
         #[arg(long)]
         dry_run: bool,
     },
@@ -159,8 +167,10 @@ fn main() -> ExitCode {
             config,
             set,
             default_policy,
+            queue_num,
+            verbose,
             dry_run,
-        } => cmd_run(&config, &set, &default_policy, dry_run),
+        } => cmd_run(&config, &set, &default_policy, queue_num, verbose, dry_run),
         Commands::Version => cmd_version(),
     }
 }
@@ -390,6 +400,8 @@ fn cmd_run(
     config_paths: &[PathBuf],
     sets: &[String],
     _default_policy: &str,
+    queue_num: u16,
+    verbose: bool,
     dry_run: bool,
 ) -> ExitCode {
     let config = match load_config(config_paths) {
@@ -400,36 +412,70 @@ fn cmd_run(
         }
     };
 
-    let engine = Engine::new(config);
-
     if dry_run {
         println!("niro ready (dry run mode)");
         println!("Configuration loaded:");
-        println!("  Sets:    {}", engine.config().sets.len());
-        println!("  Rules:   {}", engine.config().rules.len());
-        println!("  Filters: {}", engine.config().filters.len());
+        println!("  Sets:    {}", config.sets.len());
+        println!("  Rules:   {}", config.rules.len());
+        println!("  Filters: {}", config.filters.len());
         println!("Active sets: {}", sets.join(", "));
         println!("\nPacket evaluation engine ready.");
-        println!("In production mode, niro would intercept and process network traffic.");
+        #[cfg(target_os = "linux")]
+        println!("Would bind to NFQUEUE {}", queue_num);
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = queue_num; // Suppress unused warning
+            println!("Note: Packet interception only supported on Linux.");
+        }
         return ExitCode::SUCCESS;
     }
 
-    // In a real implementation, this would:
-    // 1. Set up packet capture/interception (e.g., using netfilter/nfqueue, eBPF, etc.)
-    // 2. For each packet, call engine.evaluate()
-    // 3. Apply the decision (accept, drop, redirect, mirror)
-    //
-    // For now, we just print a message indicating the engine is ready
-    println!("niro v{}", env!("CARGO_PKG_VERSION"));
-    println!("Configuration loaded successfully.");
-    println!("Active sets: {}", sets.join(", "));
-    println!();
-    println!("Note: Actual packet interception requires platform-specific setup");
-    println!("      (e.g., netfilter/nfqueue on Linux, divert sockets on BSD).");
-    println!();
-    println!("Use 'niro explain' to simulate packet evaluation.");
+    // Linux: Use real packet interception via NFQUEUE
+    #[cfg(target_os = "linux")]
+    {
+        use niro::NfqueueRunner;
 
-    ExitCode::SUCCESS
+        // Check if running as root
+        if unsafe { libc::geteuid() } != 0 {
+            eprintln!("Error: niro must be run as root for packet interception.");
+            eprintln!("Try: sudo niro run -c config.toml -s default");
+            return ExitCode::FAILURE;
+        }
+
+        println!("niro v{}", env!("CARGO_PKG_VERSION"));
+        println!("Configuration loaded:");
+        println!("  Sets:    {}", config.sets.len());
+        println!("  Rules:   {}", config.rules.len());
+        println!("  Filters: {}", config.filters.len());
+        println!();
+
+        let runner = NfqueueRunner::new(config, sets.to_vec(), queue_num, verbose);
+
+        match runner.run() {
+            Ok(_) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                eprintln!();
+                eprintln!("Make sure you have set up iptables to send packets to NFQUEUE:");
+                eprintln!("  sudo iptables -I INPUT -j NFQUEUE --queue-num {}", queue_num);
+                eprintln!("  sudo iptables -I OUTPUT -j NFQUEUE --queue-num {}", queue_num);
+                ExitCode::FAILURE
+            }
+        }
+    }
+
+    // Non-Linux: Show informational message
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (queue_num, verbose); // Suppress unused warnings
+        println!("niro v{}", env!("CARGO_PKG_VERSION"));
+        println!("Configuration loaded successfully.");
+        println!("Active sets: {}", sets.join(", "));
+        println!();
+        println!("Note: Packet interception is only supported on Linux.");
+        println!("      Use 'niro explain' to simulate packet evaluation.");
+        ExitCode::SUCCESS
+    }
 }
 
 fn cmd_version() -> ExitCode {

@@ -26,6 +26,12 @@ thiserror = "1"
 # IP network handling (lightweight)
 ipnet = "2"
 
+# Linux packet interception (netfilter queue)
+[target.'cfg(target_os = "linux")'.dependencies]
+nfq = "0.2"
+libc = "0.2"
+ctrlc = "3"
+
 [profile.release]
 opt-level = 3
 lto = true
