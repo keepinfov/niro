@@ -1,0 +1,155 @@
+# Advanced niro configuration example
+# Demonstrates mirroring, redirects, and complex filtering
+
+default_policy = "accept"
+
+# Competition/CTF rule set with traffic mirroring
+[[set]]
+name = "competition"
+rules = ["mirror-all-traffic", "block-flag-exfil", "redirect-honeypot"]
+
+# Production rule set
+[[set]]
+name = "production"
+rules = ["rate-limit-api", "block-suspicious", "allow-internal"]
+
+# Rules
+
+# Mirror all incoming traffic for logging/analysis
+[[rule]]
+name = "mirror-all-traffic"
+direction = "in"
+protocol = "tcp"
+local_addr = "*"
+remote_addr = "*"
+local_port = "*"
+remote_port = "*"
+action = "continue"
+filters = ["mirror-logger"]
+
+# Block attempts to exfiltrate flags
+[[rule]]
+name = "block-flag-exfil"
+direction = "out"
+protocol = "any"
+local_addr = "*"
+remote_addr = "*"
+local_port = "*"
+remote_port = "*"
+action = "continue"
+filters = ["flag-pattern"]
+
+# Redirect suspicious traffic to honeypot
+[[rule]]
+name = "redirect-honeypot"
+direction = "in"
+protocol = "tcp"
+local_addr = "*"
+remote_addr = "*"
+local_port = "22"
+remote_port = "*"
+action = "continue"
+redirect_to = "10.0.0.100:2222"
+filters = ["suspicious-ssh"]
+
+# Rate limit API endpoints (ports starting with 8)
+[[rule]]
+name = "rate-limit-api"
+direction = "in"
+protocol = "tcp"
+local_addr = "192.168.1.0/24"
+remote_addr = "*"
+local_port = "8*"
+remote_port = "*"
+action = "accept"
+filters = ["api-guard"]
+
+# Block suspicious patterns
+[[rule]]
+name = "block-suspicious"
+direction = "in"
+protocol = "any"
+local_addr = "*"
+remote_addr = "*"
+local_port = "*"
+remote_port = "*"
+action = "continue"
+filters = ["injection-pattern", "traversal-pattern"]
+
+# Allow internal network
+[[rule]]
+name = "allow-internal"
+direction = "any"
+protocol = "any"
+local_addr = "10.0.0.0/8"
+remote_addr = "10.0.0.0/8"
+local_port = "*"
+remote_port = "*"
+action = "accept"
+
+# Filters
+
+[[filter]]
+name = "mirror-logger"
+module = "mirror"
+setup = [
+    "10.0.0.50:9000",
+    "10.0.0.51:9000",
+]
+on_match = "mirror"
+on_miss = "continue"
+
+[[filter]]
+name = "flag-pattern"
+module = "regex"
+setup = [
+    "FLAG\\{[A-Za-z0-9_-]+\\}",
+    "[A-Z0-9]{31}=",
+    "(?i)flag[_-]?\\d+",
+]
+on_match = "drop"
+on_miss = "continue"
+
+[[filter]]
+name = "suspicious-ssh"
+module = "regex"
+setup = [
+    "root",
+    "admin",
+    "(?i)password",
+]
+on_match = "redirect"
+on_miss = "continue"
+
+[[filter]]
+name = "api-guard"
+module = "regex"
+setup = [
+    "Authorization:\\s*Bearer\\s+[A-Za-z0-9._-]+",
+]
+on_match = "accept"
+on_miss = "continue"
+
+[[filter]]
+name = "injection-pattern"
+module = "regex"
+setup = [
+    "(?i)union\\s+select",
+    "(?i)drop\\s+table",
+    "'\\s*or\\s+'1'\\s*=\\s*'1",
+    "(?i)\\beval\\s*\\(",
+]
+on_match = "drop"
+on_miss = "continue"
+
+[[filter]]
+name = "traversal-pattern"
+module = "regex"
+setup = [
+    "\\.\\./",
+    "\\.\\.\\\\/",
+    "%2e%2e%2f",
+    "%252e%252e%252f",
+]
+on_match = "drop"
+on_miss = "continue"

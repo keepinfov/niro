@@ -1,0 +1,68 @@
+# Basic niro configuration example
+# This demonstrates a simple setup for filtering network traffic
+
+# Default policy when no rule matches
+default_policy = "accept"
+
+# Define rule sets
+[[set]]
+name = "default"
+rules = ["block-malicious", "allow-http", "allow-https"]
+
+[[set]]
+name = "strict"
+rules = ["block-malicious", "block-all-external"]
+
+# Rules
+[[rule]]
+name = "block-malicious"
+direction = "in"
+protocol = "any"
+local_addr = "*"
+remote_addr = "*"
+local_port = "*"
+remote_port = "*"
+action = "continue"
+filters = ["malicious-pattern"]
+
+[[rule]]
+name = "allow-http"
+direction = "in"
+protocol = "tcp"
+local_addr = "*"
+remote_addr = "*"
+local_port = "80"
+remote_port = "*"
+action = "accept"
+
+[[rule]]
+name = "allow-https"
+direction = "in"
+protocol = "tcp"
+local_addr = "*"
+remote_addr = "*"
+local_port = "443"
+remote_port = "*"
+action = "accept"
+
+[[rule]]
+name = "block-all-external"
+direction = "in"
+protocol = "any"
+local_addr = "*"
+remote_addr = "*"
+local_port = "*"
+remote_port = "*"
+action = "drop"
+
+# Filters
+[[filter]]
+name = "malicious-pattern"
+module = "regex"
+setup = [
+    "(?i)\\b(eval|exec|system)\\s*\\(",
+    "\\x00",
+    "<script[^>]*>",
+]
+on_match = "drop"
+on_miss = "continue"
