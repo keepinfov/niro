@@ -30,7 +30,7 @@ default_policy = "accept"
 
 [[set]]
 name = "default"
-rules = ["allow-http", "block-suspicious"]
+rules = ["allow-http", "allow-https"]
 
 [[rule]]
 name = "allow-http"
@@ -38,11 +38,14 @@ direction = "in"
 protocol = "tcp"
 local_port = "80"
 action = "accept"
+filters = ["malicious-check"]
 
 [[rule]]
-name = "block-suspicious"
+name = "allow-https"
 direction = "in"
-action = "continue"
+protocol = "tcp"
+local_port = "443"
+action = "accept"
 filters = ["malicious-check"]
 
 [[filter]]
@@ -118,10 +121,88 @@ niro explain -c config.toml -s default \
 ```
 
 ### `run`
-Run the packet evaluation engine (simulation mode).
+Run real packet interception and filtering (Linux only, requires root).
 
 ```bash
+# Dry run - validate configuration
 niro run -c config.toml -s default --dry-run
+
+# Run with verbose output
+sudo niro run -c config.toml -s default --verbose
+
+# Run on specific NFQUEUE number
+sudo niro run -c config.toml -s default -q 1 --verbose
+```
+
+## Linux Setup (NFQUEUE)
+
+niro uses Linux netfilter queue (NFQUEUE) for packet interception. Before running, you must configure iptables to send packets to the queue.
+
+### Prerequisites
+
+```bash
+# Install libnetfilter-queue (Debian/Ubuntu)
+sudo apt-get install libnetfilter-queue-dev
+
+# Install libnetfilter-queue (RHEL/CentOS/Fedora)
+sudo dnf install libnetfilter_queue-devel
+```
+
+### Setting Up iptables Rules
+
+```bash
+# Intercept incoming TCP traffic on port 80
+sudo iptables -I INPUT -p tcp --dport 80 -j NFQUEUE --queue-num 0
+
+# Intercept all incoming traffic
+sudo iptables -I INPUT -j NFQUEUE --queue-num 0
+
+# Intercept outgoing traffic
+sudo iptables -I OUTPUT -j NFQUEUE --queue-num 0
+
+# Intercept both directions
+sudo iptables -I INPUT -j NFQUEUE --queue-num 0
+sudo iptables -I OUTPUT -j NFQUEUE --queue-num 0
+```
+
+### Running niro
+
+```bash
+# Start packet filtering (must be root)
+sudo ./target/release/niro run -c config.toml -s default --verbose
+```
+
+### Removing iptables Rules
+
+```bash
+# Remove specific rule
+sudo iptables -D INPUT -p tcp --dport 80 -j NFQUEUE --queue-num 0
+
+# Remove all NFQUEUE rules
+sudo iptables -D INPUT -j NFQUEUE --queue-num 0
+sudo iptables -D OUTPUT -j NFQUEUE --queue-num 0
+
+# List current rules
+sudo iptables -L -n --line-numbers
+```
+
+### Complete Example
+
+```bash
+# 1. Build niro
+cargo build --release
+
+# 2. Set up iptables to intercept HTTP traffic
+sudo iptables -I INPUT -p tcp --dport 80 -j NFQUEUE --queue-num 0
+
+# 3. Run niro (in another terminal or background)
+sudo ./target/release/niro run -c examples/basic.toml -s default --verbose
+
+# 4. Test with curl (in another terminal)
+curl http://localhost/
+
+# 5. Clean up when done
+sudo iptables -D INPUT -p tcp --dport 80 -j NFQUEUE --queue-num 0
 ```
 
 ## Configuration Reference

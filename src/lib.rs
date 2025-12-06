@@ -7,6 +7,12 @@ pub mod engine;
 pub mod filter;
 pub mod matcher;
 
+#[cfg(target_os = "linux")]
+pub mod linux;
+
 pub use config::{Config, Filter, Rule, Set};
 pub use engine::Engine;
 pub use matcher::{MatchDetails, Packet};
+
+#[cfg(target_os = "linux")]
+pub use linux::{NfqueueError, NfqueueRunner, Stats};
